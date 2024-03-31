@@ -11,6 +11,9 @@ static uint32_t non_idle_time_sum;
 static uint32_t task_switch_timestamp;
 static bool idle_task_running;
 
+uint32_t lv_os_get_idle_percent(void);
+void lv_demo_ebike_create(void);
+
 void lv_freertos_task_switch_in(const char * name)
 {
     if(strcmp(name, "IDLE")) idle_task_running = false;
@@ -54,34 +57,34 @@ void vApplicationMallocFailedHook( void )
 }
 
 
-char *strdup(const char *src)
-{
-    char *str;
-    char *p;
-    int len = 0;
-
-    while (src[len])
-        len++;
-    str = malloc(len + 1);
-    p = str;
-    while (*src)
-        *p++ = *src++;
-    *p = '\0';
-    return str;
-}
-
-int strcasecmp (const char *s1, const char *s2)
-{
-  const unsigned char *p1 = (const unsigned char *) s1;
-  const unsigned char *p2 = (const unsigned char *) s2;
-  int result;
-  if (p1 == p2)
-    return 0;
-  while ((result = tolower (*p1) - tolower (*p2++)) == 0)
-    if (*p1++ == '\0')
-      break;
-  return result;
-}
+//char *strdup(const char *src)
+//{
+//    char *str;
+//    char *p;
+//    int len = 0;
+//
+//    while (src[len])
+//        len++;
+//    str = malloc(len + 1);
+//    p = str;
+//    while (*src)
+//        *p++ = *src++;
+//    *p = '\0';
+//    return str;
+//}
+//
+//int strcasecmp (const char *s1, const char *s2)
+//{
+//  const unsigned char *p1 = (const unsigned char *) s1;
+//  const unsigned char *p2 = (const unsigned char *) s2;
+//  int result;
+//  if (p1 == p2)
+//    return 0;
+//  while ((result = tolower (*p1) - tolower (*p2++)) == 0)
+//    if (*p1++ == '\0')
+//      break;
+//  return result;
+//}
 
 
 /* New Thread entry function */
@@ -143,6 +146,7 @@ void LVGL_thread_entry(void *pvParameters)
     while (1)
     {
         volatile uint32_t free_stack = uxTaskGetStackHighWaterMark2(NULL);
+        FSP_PARAMETER_NOT_USED(free_stack);
         lv_timer_handler();
         vTaskDelay (1);
 

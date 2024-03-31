@@ -1,15 +1,5 @@
-#include "hal_data.h"
 #include "LVGL_thread.h"
-#include "board_cfg.h"
-#include "stdio.h"
 #include "ospi_main.h"
-
-
-/* CHange to 1 to enable easier to debug asserts. */
-#if 0
- #undef assert
- #define assert(pred)    do { if (!(pred)) __BKPT(0); } while (0)
-#endif
 
 /* These commands and registers are for the Infineon S28HS256 and may not match other targets. */
 #define READ_SFDP_COMMAND          (0x5AU)
@@ -49,12 +39,11 @@
 #define REG_LATENCY_CODE_SPI   (0x00U)
 #define REG_LATENCY_CODE_OPI   (0x02U)
 
-#define MEM_LATENCY_CODE_SPI   (0x08U)
+#define MEM_LATENCY_CODE_SPI   (0x08U) //Factory default is 8
 #define MEM_LATENCY_CODE_OPI   (0x03U)
 
 #define REG_DUMMY_CYCLES_SPI   (0U)
 #define REG_DUMMY_CYCLES_OPI   (3U)
-//#define REG_DUMMY_CYCLES_OPI   (6U)
 
 #define WRITE_ENABLE_MASK      (0x02U)
 
@@ -68,23 +57,16 @@
 #define OSPI_MODE_SPI          (CFR5V_WRITE_Msk)
 #define OSPI_MODE_DOPI         (CFR5V_WRITE_Msk | CFR5V_OPIIT_Msk | CFR5V_SDRDDR_Msk)
 
-#define OSPI_RESET_PIN         BSP_IO_PORT_01_PIN_06
-#define OSPI_RESET_DELAY       (40U)
+#define OSPI_RESET_DELAY       (1U)
 
 #ifdef USE_OSPI
-
-
-FSP_CPP_HEADER
-void R_BSP_WarmStart(bsp_warm_start_event_t event);
-FSP_CPP_FOOTER
 
 static void reset_ospi_device(void);
 static void write_en(bool is_dopi, uint8_t dummy_cycles);
 static void oclk_change(bsp_clocks_octaclk_div_t divider);
 static void transition_to_dopi(void);
 
-
-const uint32_t g_autocalibration_data [4]BSP_PLACE_IN_SECTION(".ospi_device_1") =
+static const uint32_t g_autocalibration_data [4]BSP_PLACE_IN_SECTION(".ospi_device_1") =
 {
 		0xFFFF0000U,
 		0x000800FFU,
@@ -93,13 +75,23 @@ const uint32_t g_autocalibration_data [4]BSP_PLACE_IN_SECTION(".ospi_device_1") 
 };
 
 
-const uint8_t g_ddr_register_dummy_cycles_cfr3[4] = {//RDARG_4_0 use these dummy cycles for reading volatile registers
+static const uint8_t g_ddr_register_dummy_cycles_cfr3[4] = {//RDARG_4_0 use these dummy cycles for reading volatile registers
 3,4,5,6
 };
 
-const uint8_t g_sdr_register_dummy_cycles_cfr3[4] = { //RDARG_C_0 RDDYB_4_0 use these dummy cycles for reading volatile registers
+static const uint8_t g_sdr_register_dummy_cycles_cfr3[4] = { //RDARG_C_0 RDDYB_4_0 use these dummy cycles for reading volatile registers
 
 0,1,1,2
+};
+
+static spi_flash_cfg_t           g_ram_ospi_cfg;
+static ospi_b_extended_cfg_t     g_ram_ospi_extended_cfg;
+static ospi_b_xspi_command_set_t g_ram_ospi_high_speed_command_set;
+
+static const spi_flash_erase_command_t g_ospi0_dopi_erase_command_list[] = {
+        { .command = 0x2121, .size = 4096 },
+        { .command = 0xDCDC, .size = 262144 },
+        { .command = 0x6060, .size = SPI_FLASH_ERASE_SIZE_CHIP_ERASE },
 };
 
 
@@ -116,6 +108,8 @@ static void reset_ospi_device(void)
 
 static void write_en(bool is_dopi, uint8_t dummycycles)
 {
+    fsp_err_t err;
+
     spi_flash_direct_transfer_t tfr =
     {
         .command = is_dopi ? WRITE_ENABLE_COMMAND_OPI : WRITE_ENABLE_COMMAND,
@@ -124,7 +118,8 @@ static void write_en(bool is_dopi, uint8_t dummycycles)
         .data_length = 0U,
         .dummy_cycles = 0U
     };
-    fsp_err_t err = R_OSPI_B_DirectTransfer(&g_ospi0_ctrl, &tfr, SPI_FLASH_DIRECT_TRANSFER_DIR_WRITE);
+
+    err = R_OSPI_B_DirectTransfer(&g_ospi0_ctrl, &tfr, SPI_FLASH_DIRECT_TRANSFER_DIR_WRITE);
     assert(FSP_SUCCESS == err);
 
     tfr = (spi_flash_direct_transfer_t) {
@@ -132,16 +127,16 @@ static void write_en(bool is_dopi, uint8_t dummycycles)
         .command_length = is_dopi ? 2U : 1U,
         .address_length = is_dopi ? 4U : 0U,    // Address is always sent for any kind of read in DOPI
         .data_length = 1U,
-        .dummy_cycles = dummycycles //is_dopi ? REG_DUMMY_CYCLES_OPI : REG_DUMMY_CYCLES_SPI,
+        .dummy_cycles = dummycycles
     };
+
     err = R_OSPI_B_DirectTransfer(&g_ospi0_ctrl, &tfr, SPI_FLASH_DIRECT_TRANSFER_DIR_READ);
     assert(FSP_SUCCESS == err);
 
-    if ((tfr.data & WRITE_ENABLE_MASK) == 0)
-    {
-        __BKPT(0);
-    }
+    assert((tfr.data & WRITE_ENABLE_MASK) == WRITE_ENABLE_MASK);
+
 }
+
 static void oclk_change(bsp_clocks_octaclk_div_t divider)
 {
     /* Now update the octaclk divider. */
@@ -151,17 +146,14 @@ static void oclk_change(bsp_clocks_octaclk_div_t divider)
     R_BSP_OctaclkUpdate(&octaclk_settings);
 }
 
-
-uint8_t cfr2v;
-uint8_t cfr3v;
-uint8_t cfr3n;
-
 static void transition_to_dopi(void)
 {
     fsp_err_t err = FSP_SUCCESS;
-    uint8_t dopi_dummy_cycles = 3; //Factory default for latency code in CFR3N is 0, so 3 latency cycles in 8D-8D-8D DDR mode
-    uint8_t spi_dummy_cycles = 0;  //Factory default for latency code in CFR3N is 0, so 0 latency cycles in 1S-1S-1S SDR mode
-
+    uint8_t dopi_dummy_cycles = g_ddr_register_dummy_cycles_cfr3[0]; //Factory default for latency code in CFR3N is 0, so 3 latency cycles in 8D-8D-8D DDR mode
+    uint8_t spi_dummy_cycles  = g_sdr_register_dummy_cycles_cfr3[0];  //Factory default for latency code in CFR3N is 0, so 0 latency cycles in 1S-1S-1S SDR mode
+    uint8_t cfr2v;
+    uint8_t cfr3v;
+    uint8_t cfr3n;
 
     spi_flash_direct_transfer_t tfr =
     {
@@ -173,7 +165,7 @@ static void transition_to_dopi(void)
     };
 
     //RDARG_C_0 uses the latency cycles in CFR2x[3:0] for non-volatile register reads
-    tfr.dummy_cycles = 8;//Factory default is 8
+    tfr.dummy_cycles = MEM_LATENCY_CODE_SPI;
 
     /*Read CFR3N*/
     tfr.address = CFR3N_REGISTER_ADDRESS;
@@ -182,18 +174,16 @@ static void transition_to_dopi(void)
     assert(FSP_SUCCESS == err);
     cfr3n = (0x000000FF & tfr.data);
 
-#define CFR3N_UNHYSA  (1<<3) //bit CFR3N[3] controls Hybrid/Uniform Sector Architecture - JLink only supports Uniform Architecture
-
-    if (0 == (cfr3n & CFR3N_UNHYSA) )       /* Modify CFR3N to enable Uniform Sector Architecture - as the JLink only support this. */
+    if (0 == (cfr3n & CFR3V_UNHYSA_Msk) )       /* Modify CFR3N to enable Uniform Sector Architecture - early JLink SW only supports this mode. */
     {
         write_en(false, spi_dummy_cycles);
         tfr.command = WRITE_REGISTER_COMMAND;
 
         tfr.dummy_cycles = 0;//NO dummy cycles for a register write
 
-        /* Modify CFR3N to enable Uniform Sector Architecture - as the JLink only support this. */
+        /* Modify CFR3N to enable Uniform Sector Architecture - early JLink SW only supports this mode. */
         tfr.address = CFR3N_REGISTER_ADDRESS;
-        tfr.data = (cfr3n | CFR3N_UNHYSA);
+        tfr.data = (cfr3n | CFR3V_UNHYSA_Msk);
         err = R_OSPI_B_DirectTransfer(&g_ospi0_ctrl, &tfr, SPI_FLASH_DIRECT_TRANSFER_DIR_WRITE);
         assert(FSP_SUCCESS == err);
     }
@@ -232,7 +222,7 @@ static void transition_to_dopi(void)
     err = R_OSPI_B_DirectTransfer(&g_ospi0_ctrl, &tfr, SPI_FLASH_DIRECT_TRANSFER_DIR_WRITE);
     assert(FSP_SUCCESS == err);
 
-    spi_dummy_cycles = g_sdr_register_dummy_cycles_cfr3[REG_LATENCY_CODE_OPI];
+    spi_dummy_cycles  = g_sdr_register_dummy_cycles_cfr3[REG_LATENCY_CODE_OPI];
     dopi_dummy_cycles = g_ddr_register_dummy_cycles_cfr3[REG_LATENCY_CODE_OPI];
 
     write_en(false, spi_dummy_cycles);
@@ -266,23 +256,10 @@ static void transition_to_dopi(void)
 
     err = R_OSPI_B_DirectTransfer(&g_ospi0_ctrl, &tfr, SPI_FLASH_DIRECT_TRANSFER_DIR_READ);
     assert(FSP_SUCCESS == err);
+
     assert(OSPI_MODE_DOPI == (tfr.data & 0xFF));   // Need to mask here because DOPI always reads 2 bytes at a time.
 }
 
-spi_flash_cfg_t g_ram_ospi_cfg;
-ospi_b_extended_cfg_t g_ram_ospi_extended_cfg;
-ospi_b_xspi_command_set_t g_ram_ospi_high_speed_command_set;
-
-static const spi_flash_erase_command_t g_ospi0_dopi_erase_command_list[] = {
-		{ .command = 0x2121, .size = 4096 },
-		{ .command = 0xDCDC, .size = 262144 },
-		{ .command = 0x6060, .size = SPI_FLASH_ERASE_SIZE_CHIP_ERASE },
-};
-
-/*******************************************************************************************************************//**
- * main() is generated by the RA Configuration editor and is used to generate threads if an RTOS is used.  This function
- * is called by main() when no RTOS is used.
- **********************************************************************************************************************/
 void init_ospi(void)
 {
     fsp_err_t err = FSP_SUCCESS;
@@ -314,16 +291,11 @@ void init_ospi(void)
          .data_length = 4,
          .dummy_cycles = READ_SFDP_DUMMY_CYCLES
     };
+
     err = R_OSPI_B_DirectTransfer(&g_ospi0_ctrl, &test_tfr, SPI_FLASH_DIRECT_TRANSFER_DIR_READ);
     assert(FSP_SUCCESS == err);
 
-    if (SFDP_SIGNATURE != test_tfr.data)
-    {
-        while (true)
-        {
-            __BKPT(0);
-        }
-    }
+    assert(SFDP_SIGNATURE == test_tfr.data);
 
     transition_to_dopi();
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<raConfiguration version="9">
+<raConfiguration version="8">
   <generalSettings>
     <option key="#Board#" value="board.ra8d1ek"/>
     <option key="CPU" value="RA8D1"/>
@@ -50,7 +50,7 @@
     <node id="board.clock.i3cclk.source" option="board.clock.i3cclk.source.disabled"/>
     <node id="board.clock.uck.source" option="board.clock.uck.source.disabled"/>
     <node id="board.clock.u60ck.source" option="board.clock.u60ck.source.disabled"/>
-    <node id="board.clock.octaspiclk.source" option="board.clock.octaspiclk.source.disabled"/>
+    <node id="board.clock.octaspiclk.source" option="board.clock.octaspiclk.source.pll2p"/>
     <node id="board.clock.cpuclk.div" option="board.clock.cpuclk.div.1"/>
     <node id="board.clock.iclk.div" option="board.clock.iclk.div.2"/>
     <node id="board.clock.pclka.div" option="board.clock.pclka.div.4"/>
@@ -70,7 +70,7 @@
     <node id="board.clock.i3cclk.div" option="board.clock.i3cclk.div.3"/>
     <node id="board.clock.uck.div" option="board.clock.uck.div.5"/>
     <node id="board.clock.u60ck.div" option="board.clock.u60ck.div.5"/>
-    <node id="board.clock.octaspiclk.div" option="board.clock.octaspiclk.div.4"/>
+    <node id="board.clock.octaspiclk.div" option="board.clock.octaspiclk.div.2"/>
     <node id="board.clock.cpuclk.display" option="board.clock.cpuclk.display.value"/>
     <node id="board.clock.iclk.display" option="board.clock.iclk.display.value"/>
     <node id="board.clock.pclka.display" option="board.clock.pclka.display.value"/>
@@ -128,7 +128,6 @@
       <configSetting altId="ospi.om_cs1.p104" configurationId="ospi.om_cs1"/>
       <configSetting altId="ospi.om_dqs.p801" configurationId="ospi.om_dqs"/>
       <configSetting altId="ospi.om_ecsint1.p105" configurationId="ospi.om_ecsint1"/>
-      <configSetting altId="ospi.om_reset.p106" configurationId="ospi.om_reset"/>
       <configSetting altId="ospi.om_sclk.p808" configurationId="ospi.om_sclk"/>
       <configSetting altId="ospi.om_sio0.p100" configurationId="ospi.om_sio0"/>
       <configSetting altId="ospi.om_sio1.p803" configurationId="ospi.om_sio1"/>
@@ -138,6 +137,7 @@
       <configSetting altId="ospi.om_sio5.p800" configurationId="ospi.om_sio5"/>
       <configSetting altId="ospi.om_sio6.p802" configurationId="ospi.om_sio6"/>
       <configSetting altId="ospi.om_sio7.p804" configurationId="ospi.om_sio7"/>
+      <configSetting altId="p106.output.high" configurationId="p106"/>
       <configSetting altId="p107.output.low" configurationId="p107"/>
       <configSetting altId="p404.output.low" configurationId="p404"/>
       <configSetting altId="p414.output.low" configurationId="p414"/>
